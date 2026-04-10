@@ -1,0 +1,8 @@
+node_modules
+artifacts
+cache
+typechain-types
+.env
+games/parsed_output.json
+games/preview.svg
+.DS_Store
