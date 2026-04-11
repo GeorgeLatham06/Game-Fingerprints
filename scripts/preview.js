@@ -1,37 +1,62 @@
-const hre = require("hardhat");
+const { ethers } = require("hardhat");
 const fs = require("fs");
-const path = require("path");
 
+/**
+ * @dev Local testing script to preview the on-chain generative art.
+ * This script automates: Local Deployment -> Minting -> TokenURI Retrieval -> SVG Extraction.
+ */
 async function main() {
-  const tokenId = process.argv[2] || "0";
+    console.log("🚀 Starting local preview generator...");
 
-  const contractAddress = process.env.CONTRACT_ADDRESS;
-  if (!contractAddress) {
-    console.error("set CONTRACT_ADDRESS in .env first");
-    process.exit(1);
-  }
+    // 1. Deploy the contract to a local in-memory blockchain (Hardhat Network)
+    const GameFingerprint = await ethers.getContractFactory("GameFingerprint");
+    const contract = await GameFingerprint.deploy();
+    
+    // Handle asynchronous deployment based on ethers.js version (v5 vs v6)
+    if (contract.waitForDeployment) {
+        await contract.waitForDeployment();
+    } else {
+        await contract.deployed();
+    }
+    console.log("✅ Temporary contract deployed!");
 
-  const contract = await hre.ethers.getContractAt("GameFingerprint", contractAddress);
-  const uri = await contract.tokenURI(tokenId);
+    /**
+     * 2. Prepare mock chess move data
+     * This 0x... hex string represents encoded move data (2-byte encoding)
+     * using the Kasparov vs. Deep Blue, Game 6 (1997) dataset.
+     */
+    const dummyMoveData = "0x31c0caa02db0ce3005208dc849c8e7307260fad01530d2c01950def09ac8ef401060d6c84ee4f3b009d0c6102180eb101440b6307560efa06218aa180d30c6a0ba50b2581348f74829a0"; 
+    const dummyMetadata = "Kasparov vs Deep Blue, Game 6 (1997)";
 
-  // tokenURI returns: data:application/json;base64,<stuff>
-  // so we split on the comma and decode the base64 part
-  const jsonBase64 = uri.split(",")[1];
-  const metadata = JSON.parse(Buffer.from(jsonBase64, "base64").toString());
+    // 3. Mint a test NFT with the provided move data
+    console.log("🔨 Minting test NFT...");
+    const tx = await contract.mint(dummyMoveData, dummyMetadata);
+    await tx.wait();
 
-  console.log("metadata:", JSON.stringify(metadata, null, 2));
+    // 4. Retrieve the tokenURI (Base64 encoded JSON)
+    console.log("🔍 Fetching tokenURI...");
+    const uri = await contract.tokenURI(0);
 
-  // the image field is ALSO a data uri, decode that too to get the svg
-  if (metadata.image) {
-    const svgBase64 = metadata.image.split(",")[1];
-    const svg = Buffer.from(svgBase64, "base64").toString();
-    const outPath = path.join(__dirname, "../games/preview.svg");
-    fs.writeFileSync(outPath, svg);
-    console.log("svg saved to", outPath);
-  }
+    /**
+     * 5. Decode the Base64 JSON and extract the SVG image data
+     * Step 1: Parse the JSON from the Data URI.
+     * Step 2: Extract and decode the SVG string from the "image" field.
+     */
+    const base64Json = uri.split(",")[1];
+    const jsonStr = Buffer.from(base64Json, "base64").toString("utf-8");
+    const json = JSON.parse(jsonStr);
+
+    const base64Svg = json.image.split(",")[1];
+    const svgStr = Buffer.from(base64Svg, "base64").toString("utf-8");
+
+    // 6. Write the final SVG to a file for visual verification
+    fs.writeFileSync("output.svg", svgStr);
+    console.log("🎉 Success! Check the 'output.svg' file in your project root.");
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
-});
+main()
+    .then(() => process.exit(0))
+    .catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });
