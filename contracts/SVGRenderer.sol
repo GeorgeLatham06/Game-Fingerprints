@@ -2,224 +2,231 @@
 pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "solady/src/utils/DynamicBufferLib.sol";
+import "solady/src/utils/FixedPointMathLib.sol";
 
-/**
- * @title SVGRenderer
- * @dev Master engine for the "Macro-Cosmos" generative art series.
- * Transforms chess move data into a high-fidelity, chaotic on-chain visual.
- */
 library SVGRenderer {
     using Strings for uint256;
+    using DynamicBufferLib for DynamicBufferLib.DynamicBuffer;
 
-    /**
-     * @dev Defines SVG filters, gradients, and CSS animations.
-     * Includes Heavy Glow for blooming effects and Film Grain for analog texture.
-     */
-    function _generateDefs() private pure returns (string memory) {
-        return string(abi.encodePacked(
-            "<defs>",
-            "<filter id='glowHeavy' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='15' result='blur'/><feComposite in='SourceGraphic' in2='blur' operator='over'/></filter>",
-            "<filter id='glowLight'><feGaussianBlur stdDeviation='3' result='blur'/><feMerge><feMergeNode in='blur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>",
-            "<filter id='filmGrain'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/></filter>",
-            
-            // Narrative-driven gradients: Early game (Cool) -> Mid game (Vibrant) -> Late game (Heat)
-            "<linearGradient id='earlyGrad' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' stop-color='#00c6ff'/><stop offset='100%' stop-color='#0072ff'/></linearGradient>",
-            "<linearGradient id='midGrad' x1='0%' y1='100%' x2='100%' y2='0%'><stop offset='0%' stop-color='#f77062'/><stop offset='100%' stop-color='#fe5196'/></linearGradient>",
-            "<linearGradient id='lateGrad' x1='50%' y1='50%' r='50%'><stop offset='0%' stop-color='#f9d423'/><stop offset='100%' stop-color='#ff4e50'/></linearGradient>",
-            "</defs>",
-            "<style>",
-            "@keyframes pulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } } ",
-            ".pulse { animation: pulse 3s ease-in-out infinite; }",
-            "</style>"
-        ));
+    struct PathVars {
+        uint256 x1; uint256 y1; uint256 x2; uint256 y2;
+        uint256 cx1; uint256 cy1; uint256 cx2; uint256 cy2;
+        uint256 thickness; uint256 opacity; string colorUrl;
     }
 
-    /**
-     * @dev Generates a massive ambient background with light orbs and macro orbits.
-     * Fills the canvas void with bold yet soft geometric structures.
-     */
-    function _generateMacroBackground(uint256 seed) private pure returns (string memory) {
-        // Base color: Deep Midnight Blue for enhanced contrast
-        string memory bg = "<rect width='1024' height='1024' fill='#050814'/>";
+    struct ShardVars {
+        uint256 angle; uint256 length; uint256 width;
+        uint256 safeY1; uint256 safeY2; uint256 safeX1;
+    }
 
-        // Massive Light Blooms: 3 super-sized orbs derived from seed
-        for (uint i = 0; i < 3; i++) {
-            uint256 cx = (seed >> (i * 4)) % 1024;
-            uint256 cy = (seed >> (i * 4 + 8)) % 1024;
-            uint256 r = 400 + ((seed >> (i * 4 + 16)) % 500);
-            
-            string memory colorUrl = (i == 0) ? "url(#earlyGrad)" : ((i == 1) ? "url(#midGrad)" : "url(#lateGrad)");
-            
-            bg = string(abi.encodePacked(
-                bg,
-                "<circle cx='", cx.toString(), "' cy='", cy.toString(), "' r='", r.toString(), "' fill='", colorUrl, "' opacity='0.15' filter='url(#glowHeavy)' style='mix-blend-mode: screen;'/>"
-            ));
-        }
+    struct RenderConfig {
+        string bgHex; string cF1; string cF2; string cC1; string cC2;
+        uint256 rotDur; uint256 pulseDur; uint256 anchorScale;
+        uint256 theme; uint256 glyphType; uint256 forkIntens;
+        string narrativeText; 
+    }
 
-        // Macro-Orbits: Gigantic elliptical frames to provide spatial depth
-        uint256 angle = seed % 360;
-        uint256 rx = 300 + (seed % 300);
-        uint256 ry = 200 + ((seed >> 8) % 300);
+    function _buildConfig(uint256 seed) private view returns (RenderConfig memory cfg) {
+        uint256 timeSeed = uint256(keccak256(abi.encodePacked(seed, block.timestamp)));
         
-        bg = string(abi.encodePacked(
-            bg,
-            "<ellipse cx='512' cy='512' rx='", rx.toString(), "' ry='", ry.toString(), "' fill='none' stroke='#ffffff' stroke-width='1' stroke-dasharray='5, 30' opacity='0.15' transform='rotate(", angle.toString(), " 512 512)'/>",
-            "<ellipse cx='512' cy='512' rx='", ry.toString(), "' ry='", rx.toString(), "' fill='none' stroke='url(#earlyGrad)' stroke-width='2' opacity='0.1' transform='rotate(", (360 - angle).toString(), " 512 512)'/>"
-        ));
-
-        // Background diagonal framing
-        uint256 y1 = (seed % 500);
-        uint256 y2 = ((seed >> 8) % 500) + 500;
-        bg = string(abi.encodePacked(
-            bg,
-            "<line x1='0' y1='", y1.toString(), "' x2='1024' y2='", (y1 + 300).toString(), "' stroke='#ffffff' stroke-width='2' opacity='0.08'/>",
-            "<line x1='0' y1='", y2.toString(), "' x2='1024' y2='", (y2 - 300).toString(), "' stroke='url(#midGrad)' stroke-width='4' opacity='0.05'/>",
-            "<rect width='1024' height='1024' filter='url(#filmGrain)' opacity='0.08' style='mix-blend-mode: overlay; pointer-events:none;'/>"
-        ));
-
-        return bg;
-    }
-
-    /**
-     * @dev Renders subtle starfield particles across the global arena.
-     */
-    function _generateGlobalArena(uint256 seed) private pure returns (string memory) {
-        string memory arena = "";
-        for (uint i = 0; i < 50; i++) {
-            uint256 x = (seed >> i) % 1024;
-            uint256 y = (seed >> (i+1)) % 1024;
-            uint256 r = ((seed >> (i+2)) % 4) + 1;
-            uint256 op = ((seed >> (i+3)) % 40) + 15;
-            arena = string(abi.encodePacked(
-                arena,
-                "<circle cx='", x.toString(), "' cy='", y.toString(), "' r='", r.toString(), "' fill='#ffffff' opacity='0.", op.toString(), "'/>"
-            ));
+        cfg.theme = timeSeed % 4;
+        
+        if (cfg.theme == 0) { 
+            cfg.bgHex = "#04060d"; cfg.cF1 = "#00f2fe"; cfg.cF2 = "#4facfe"; cfg.cC1 = "#ff0844"; cfg.cC2 = "#ffb199"; 
+        } else if (cfg.theme == 1) { 
+            cfg.bgHex = "#050510"; cfg.cF1 = "#cfb53b"; cfg.cF2 = "#ffdf73"; cfg.cC1 = "#e63946"; cfg.cC2 = "#a8dadc"; 
+        } else if (cfg.theme == 2) { 
+            cfg.bgHex = "#111111"; cfg.cF1 = "#ffffff"; cfg.cF2 = "#cccccc"; cfg.cC1 = "#888888"; cfg.cC2 = "#444444"; 
+        } else { 
+            cfg.bgHex = "#001b2e"; cfg.cF1 = "#2980b9"; cfg.cF2 = "#6dd5fa"; cfg.cC1 = "#ff7e5f"; cfg.cC2 = "#feb47b"; 
         }
-        return arena;
+
+        cfg.rotDur = 10 + (timeSeed % 30); cfg.pulseDur = 2 + (timeSeed % 5); 
+        cfg.anchorScale = 10 + (timeSeed % 25); cfg.forkIntens = 30 + (timeSeed % 60);  
+        cfg.glyphType = (timeSeed >> 8) % 3;
+        
+        uint256 textType = (timeSeed >> 16) % 3;
+        if(textType == 0) cfg.narrativeText = "MACHINE VICTORY : HUMAN BEWILDERMENT";
+        else if(textType == 1) cfg.narrativeText = "SYSTEM OVERRIDE : CALCULATED SACRIFICE";
+        else cfg.narrativeText = "INEVITABLE COLLAPSE : THE FINAL ALGORITHM";
+
+        return cfg;
     }
 
-    /**
-     * @dev Chaos Flow: Visualizes move history using randomized Cubic Bezier curves.
-     * Line weight and opacity scale as the game progresses (Crescendo effect).
-     */
-    function _generateGameFlow(uint16[] memory moves, uint256 seed) private pure returns (string memory) {
-        string memory elements = "";
+    function _generateDefs(DynamicBufferLib.DynamicBuffer memory buffer, RenderConfig memory cfg) private pure {
+        buffer.p(bytes("<defs><filter id='glowHeavy' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='12' result='blur'/><feComposite in='SourceGraphic' in2='blur' operator='over'/></filter>"));
+        buffer.p(bytes("<filter id='glowLight'><feGaussianBlur stdDeviation='3' result='blur'/><feMerge><feMergeNode in='blur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>"));
+        buffer.p(bytes("<filter id='noiseSharp'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/></filter>"));
+        buffer.p(bytes("<pattern id='gridSolid' width='60' height='60' patternUnits='userSpaceOnUse'><path d='M 60 0 L 0 0 0 60' fill='none' stroke='#ffffff' stroke-width='0.5' opacity='0.15'/></pattern>"));
+        
+        buffer.p(abi.encodePacked("<linearGradient id='gradFlow' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' stop-color='", cfg.cF1, "'/><stop offset='100%' stop-color='", cfg.cF2, "'/></linearGradient>"));
+        buffer.p(abi.encodePacked("<linearGradient id='gradClash' x1='0%' y1='100%' x2='100%' y2='0%'><stop offset='0%' stop-color='", cfg.cC1, "'/><stop offset='100%' stop-color='", cfg.cC2, "'/></linearGradient>"));
+
+        if (cfg.glyphType == 0) {
+            buffer.p(bytes("<g id='gl1'><polygon points='0,-8 8,0 0,8 -8,0' fill='none' stroke='#fff' stroke-width='1.5'/></g>"));
+            buffer.p(bytes("<g id='gl2'><path d='M -5,-5 L 5,5 M 5,-5 L -5,5' stroke='#fff' stroke-width='1.5'/></g>"));
+        } else if (cfg.glyphType == 1) {
+            buffer.p(bytes("<g id='gl1'><circle cx='0' cy='0' r='6' fill='none' stroke='#fff' stroke-width='1.5'/><circle cx='0' cy='0' r='2' fill='#fff'/></g>"));
+            buffer.p(bytes("<g id='gl2'><polygon points='0,-8 7,4 -7,4' fill='none' stroke='#fff' stroke-width='1.5'/></g>"));
+        } else {
+            buffer.p(bytes("<g id='gl1'><path d='M -4,-8 L 4,-8 L 4,8 L -4,8' fill='none' stroke='#fff' stroke-width='1.5'/></g>"));
+            buffer.p(bytes("<g id='gl2'><path d='M -6,0 Q 0,-8 6,0 Q 0,8 -6,0' fill='none' stroke='#fff' stroke-width='1.5'/></g>"));
+        }
+        buffer.p(bytes("</defs>"));
+    }
+
+    function _renderOpeningBackground(DynamicBufferLib.DynamicBuffer memory buffer, uint16[] memory moves, uint256 seed, RenderConfig memory cfg) private pure {
+        uint256 openingHash = moves.length > 3 ? uint256(keccak256(abi.encodePacked(moves[0], moves[1], moves[2]))) : seed;
+        buffer.p(abi.encodePacked("<rect width='1024' height='1024' fill='", cfg.bgHex, "'/>"));
+
+        for(uint i=0; i<12; i++) {
+            uint256 bx = (seed >> (i*2)) % 1024;
+            uint256 by = (seed >> (i*2+1)) % 1024;
+            uint256 br = 50 + (seed % 250);
+            string memory bColor = i % 2 == 0 ? "url(#gradFlow)" : "url(#gradClash)";
+            buffer.p(abi.encodePacked("<circle cx='", bx.toString(), "' cy='", by.toString(), "' r='", br.toString(), "' fill='", bColor, "' opacity='0.03'/>"));
+        }
+
+        if (openingHash % 2 == 0) { buffer.p(bytes("<rect width='1024' height='1024' fill='url(#gridSolid)'/>")); } 
+        else { buffer.p(bytes("<rect width='1024' height='1024' filter='url(#noiseSharp)' opacity='0.08' style='mix-blend-mode: overlay;'/>")); }
+    }
+
+    function _renderSinglePath(DynamicBufferLib.DynamicBuffer memory buffer, uint16 move, uint256 i, uint256 total, uint256 seed, uint256[4] memory hotspots, RenderConfig memory cfg) private pure {
+        PathVars memory v; 
+        uint256 moveHash = uint256(keccak256(abi.encodePacked(seed, i)));
+        
+        (v.x1, v.y1) = _sqToCoord((move >> 6) & 0x3F);
+        (v.x2, v.y2) = _sqToCoord(move & 0x3F);
+
+        {
+            uint256 dx = v.x1 > v.x2 ? v.x1 - v.x2 : v.x2 - v.x1;
+            uint256 dy = v.y1 > v.y2 ? v.y1 - v.y2 : v.y2 - v.y1;
+            v.thickness = (FixedPointMathLib.sqrt((dx * dx) + (dy * dy)) / 50) + 1; 
+        }
+
+        uint256 warpPull = cfg.anchorScale * 2;
+        v.cx1 = (i % 2 == 0) ? hotspots[0] : hotspots[2] + (moveHash % warpPull);
+        v.cy1 = (i % 2 == 0) ? hotspots[1] : hotspots[3] - (moveHash % warpPull);
+        v.cx2 = ((v.x1 + v.x2) / 2) + (moveHash % 120); 
+        v.cy2 = ((v.y1 + v.y2) / 2) + ((moveHash >> 8) % 120);
+
+        v.colorUrl = (i < total / 2) ? "url(#gradFlow)" : "url(#gradClash)";
+        v.opacity = 20 + ((i * 80) / total);
+
+        buffer.p(abi.encodePacked("<path d='M ", v.x1.toString(), " ", v.y1.toString(), " C ", v.cx1.toString()));
+        buffer.p(abi.encodePacked(" ", v.cy1.toString(), " ", v.cx2.toString(), " ", v.cy2.toString(), " ", v.x2.toString()));
+        buffer.p(abi.encodePacked(" ", v.y2.toString(), "' fill='none' stroke='", v.colorUrl, "' stroke-width='"));
+        buffer.p(abi.encodePacked(v.thickness.toString(), "' opacity='0.", v.opacity.toString(), "' filter='url(#glowLight)' style='mix-blend-mode: screen;'/>"));
+
+        buffer.p(abi.encodePacked("<path d='M ", (v.x1+10).toString(), " ", (v.y1+10).toString(), " C ", v.cx1.toString()));
+        buffer.p(abi.encodePacked(" ", v.cy1.toString(), " ", v.cx2.toString(), " ", v.cy2.toString(), " ", (v.x2+10).toString()));
+        buffer.p(abi.encodePacked(" ", (v.y2+10).toString(), "' fill='none' stroke='#ffffff' stroke-width='0.5' stroke-dasharray='2,6' opacity='0.3'/>"));
+
+        buffer.p(abi.encodePacked("<circle cx='", v.cx2.toString(), "' cy='", v.cy2.toString(), "' r='1.5' fill='#ffffff' opacity='0.5'/>"));
+    }
+
+    function _renderGameFlow(DynamicBufferLib.DynamicBuffer memory buffer, uint16[] memory moves, uint256 seed, RenderConfig memory cfg) private pure {
         uint256 total = moves.length;
+        uint256[4] memory hotspots = [(seed % 600) + 200, ((seed >> 8) % 600) + 200, ((seed >> 16) % 600) + 200, ((seed >> 24) % 600) + 200];
 
-        for (uint256 i = 0; i < total; i++) {
-            uint256 moveHash = uint256(keccak256(abi.encodePacked(seed, i)));
-            (uint256 x1, uint256 y1) = _sqToCoord((moves[i] >> 6) & 0x3F);
-            (uint256 x2, uint256 y2) = _sqToCoord(moves[i] & 0x3F);
+        buffer.p(abi.encodePacked("<circle cx='", hotspots[0].toString(), "' cy='", hotspots[1].toString(), "' r='200' fill='url(#gradClash)' filter='url(#glowHeavy)'>"));
+        buffer.p(abi.encodePacked("<animate attributeName='opacity' values='0.05;0.18;0.05' dur='", cfg.pulseDur.toString(), "s' repeatCount='indefinite'/></circle>"));
+        
+        buffer.p(abi.encodePacked("<circle cx='", hotspots[2].toString(), "' cy='", hotspots[3].toString(), "' r='150' fill='url(#gradFlow)' filter='url(#glowHeavy)'>"));
+        buffer.p(abi.encodePacked("<animate attributeName='opacity' values='0.05;0.22;0.05' dur='", (cfg.pulseDur + 1).toString(), "s' repeatCount='indefinite'/></circle>"));
 
-            // Control points calculated to swing wide across the canvas
-            uint256 cx1 = (moveHash % 800) + ((x1 > 400) ? 0 : 200); 
-            uint256 cy1 = ((moveHash >> 8) % 800) + ((y1 > 400) ? 0 : 200);
-            uint256 cx2 = ((moveHash >> 16) % 800) + ((x2 > 400) ? 0 : 200);
-            uint256 cy2 = ((moveHash >> 24) % 800) + ((y2 > 400) ? 0 : 200);
-
-            uint256 prog = (i * 100) / total;
-            uint256 thickness = (prog / 8) + 1 + (moveHash % 5); 
-            uint256 opacity = 20 + (prog * 80 / 100) + (moveHash % 10); 
-            
-            string memory colorUrl = (prog < 30) ? "url(#earlyGrad)" : (prog < 70 ? "url(#midGrad)" : "url(#lateGrad)");
-
-            elements = string(abi.encodePacked(
-                elements,
-                "<path d='M ", x1.toString(), " ", y1.toString(), " C ", cx1.toString(), " ", cy1.toString(), " ", cx2.toString(), " ", cy2.toString(), " ", x2.toString(), " ", y2.toString(), 
-                "' fill='none' stroke='", colorUrl, "' stroke-width='", thickness.toString(), "' opacity='0.", opacity.toString(), "' filter='url(#glowLight)' style='mix-blend-mode: screen;'/>"
-            ));
-
-            uint256 r = 2 + (prog / 12) + (moveHash % 3);
-            elements = string(abi.encodePacked(
-                elements,
-                "<circle cx='", x2.toString(), "' cy='", y2.toString(), "' r='", r.toString(), "' fill='#ffffff' opacity='0.", opacity.toString(), "' filter='url(#glowLight)'/>"
-            ));
-        }
-        return elements;
+        for (uint256 i = 0; i < total - 1; i++) { _renderSinglePath(buffer, moves[i], i, total, seed, hotspots, cfg); }
     }
 
-    /**
-     * @dev Checkmate Nova: Dramatic explosion effect at the final move coordinates.
-     * Generates randomized neon shards using chaotic seed values.
-     */
-    function _generateCheckmateNova(uint16 lastMove, uint256 seed) private pure returns (string memory) {
+    function _renderSingleAnchor(DynamicBufferLib.DynamicBuffer memory buffer, uint256 seed, uint256 i, RenderConfig memory cfg) private pure {
+        uint256 ax = (seed >> (i * 2)) % 900 + 50;
+        uint256 ay = (seed >> (i * 2 + 1)) % 900 + 50;
+        uint256 size = cfg.anchorScale + (seed % 10); 
+
+        // [버그 픽스] 언더플로우를 방지하는 안전한 뺄셈 (Safe Subtraction)
+        uint256 safeAx = ax > size ? ax - size : 0;
+        uint256 f1 = cfg.forkIntens; uint256 f2 = cfg.forkIntens * 2;
+        uint256 safeAy = ay > f1 ? ay - f1 : 0;
+
+        buffer.p(abi.encodePacked("<polygon points='", ax.toString(), ",", ay.toString(), " ", (ax + size).toString()));
+        buffer.p(abi.encodePacked(",", (ay + size * 2).toString(), " ", safeAx.toString(), ",", (ay + size * 2).toString()));
+        buffer.p(bytes("' fill='none' stroke='#ffffff' stroke-width='1.5' opacity='0.3' filter='url(#glowLight)'/>"));
+        
+        buffer.p(abi.encodePacked("<path d='M ", ax.toString(), " ", ay.toString(), " Q ", (ax+f1).toString(), " ", safeAy.toString(), " ", (ax+f2).toString(), " ", ay.toString()));
+        buffer.p(bytes("' fill='none' stroke='url(#gradFlow)' stroke-width='1' stroke-dasharray='4,6' opacity='0.5'/>"));
+
+        string memory glyphId = i % 2 == 0 ? "#gl1" : "#gl2";
+        buffer.p(abi.encodePacked("<use href='", glyphId, "' x='", ax.toString(), "' y='", ay.toString(), "' filter='url(#glowLight)'/>"));
+    }
+
+    function _renderPositionalAnchors(DynamicBufferLib.DynamicBuffer memory buffer, uint256 captures, uint256 checks, uint256 seed, RenderConfig memory cfg) private pure {
+        uint256 totalAnchors = (captures + checks) % 8 + 3;
+        for(uint i = 0; i < totalAnchors; i++) { _renderSingleAnchor(buffer, seed, i, cfg); }
+    }
+
+    function _renderSingleShard(DynamicBufferLib.DynamicBuffer memory buffer, uint256 seed, uint256 i, uint256 cx, uint256 cy) private pure {
+        ShardVars memory v;
+        uint256 shardHash = uint256(keccak256(abi.encodePacked(seed, i)));
+        
+        v.angle = (i * 360) / 24 + (shardHash % 25); v.length = 150 + (shardHash % 300); v.width = 8 + (shardHash % 25);    
+        v.safeY1 = (cy > v.length / 2) ? cy - v.length / 2 : 0; v.safeY2 = (cy > v.length) ? cy - v.length : 0; v.safeX1 = (cx > v.width) ? cx - v.width : 0;
+
+        buffer.p(abi.encodePacked("<polygon points='", cx.toString(), ",", cy.toString(), " ", (cx + v.width).toString()));
+        buffer.p(abi.encodePacked(",", v.safeY1.toString(), " ", cx.toString(), ",", v.safeY2.toString(), " ", v.safeX1.toString()));
+        buffer.p(abi.encodePacked(",", v.safeY1.toString(), "' fill='url(#gradClash)' opacity='0.8' filter='url(#glowLight)' transform='rotate("));
+        buffer.p(abi.encodePacked(v.angle.toString(), " ", cx.toString(), " ", cy.toString(), ")'/>"));
+    }
+
+    function _renderCheckmateNarrative(DynamicBufferLib.DynamicBuffer memory buffer, uint16 lastMove, uint256 seed, RenderConfig memory cfg) private pure {
         (uint256 cx, uint256 cy) = _sqToCoord(lastMove & 0x3F);
-        string memory nova = "";
 
-        nova = string(abi.encodePacked(
-            "<circle cx='", cx.toString(), "' cy='", cy.toString(), "' r='300' fill='url(#lateGrad)' filter='url(#glowHeavy)' opacity='0.3'/>",
-            "<circle cx='", cx.toString(), "' cy='", cy.toString(), "' r='150' fill='none' stroke='#ffffff' stroke-width='4' stroke-dasharray='10,50' class='pulse'/>"
-        ));
+        buffer.p(abi.encodePacked("<text x='", (cx > 150 ? cx - 150 : 0).toString(), "' y='", (cy > 100 ? cy - 100 : 0).toString()));
+        buffer.p(abi.encodePacked("' fill='#ffffff' opacity='0.6' font-family='monospace' font-size='22' font-weight='bold' letter-spacing='2' transform='rotate(-35 ", cx.toString(), " ", cy.toString(), ")'>"));
+        buffer.p(abi.encodePacked(cfg.narrativeText, "</text>"));
 
-        // Chaos Fragment Explosion: 32 randomized polygonal shards
-        for(uint i = 0; i < 32; i++) {
-            uint256 shardHash = uint256(keccak256(abi.encodePacked(seed, i)));
-            uint256 angle = (i * 360) / 32 + (shardHash % 25); 
-            
-            uint256 length = 200 + (shardHash % 280); 
-            uint256 width = 12 + (shardHash % 35);    
-            uint256 tipWidth = (shardHash % width) + 1; 
+        buffer.p(abi.encodePacked("<circle cx='", cx.toString(), "' cy='", cy.toString(), "' r='280' fill='url(#gradClash)' filter='url(#glowHeavy)' opacity='0.35'/>"));
+        buffer.p(abi.encodePacked("<circle cx='", cx.toString(), "' cy='", cy.toString(), "' r='140' fill='none' stroke='#ffffff' stroke-width='2' stroke-dasharray='5,30'/>"));
 
-            string memory colorUrl = (shardHash % 2 == 0) ? "url(#lateGrad)" : "url(#midGrad)");
-
-            // Safe subtraction logic to prevent uint256 underflow at canvas edges
-            uint256 safeY1 = (cy > length / 2) ? cy - length / 2 : 0;
-            uint256 safeY2 = (cy > length) ? cy - length : 0;
-            uint256 safeX1 = (cx > tipWidth) ? cx - tipWidth : 0;
-
-            string memory points = string(abi.encodePacked(
-                cx.toString(), ",", cy.toString(), " ",
-                (cx + width).toString(), ",", safeY1.toString(), " ",
-                cx.toString(), ",", safeY2.toString(), " ",
-                safeX1.toString(), ",", safeY1.toString()
-            ));
-
-            nova = string(abi.encodePacked(
-                nova,
-                "<polygon points='", points, 
-                "' fill='", colorUrl, "' opacity='0.85' filter='url(#glowLight)' transform='rotate(", angle.toString(), " ", cx.toString(), " ", cy.toString(), ")'/>"
-            ));
-        }
-
-        nova = string(abi.encodePacked(
-            nova,
-            "<circle cx='", cx.toString(), "' cy='", cy.toString(), "' r='60' fill='#ffffff' filter='url(#glowHeavy)' class='pulse'/>"
-        ));
-
-        return string(abi.encodePacked("<g style='mix-blend-mode: screen;'>", nova, "</g>"));
+        buffer.p(abi.encodePacked("<g style='mix-blend-mode: screen;'><animateTransform attributeName='transform' type='rotate' from='0 ", cx.toString(), " ", cy.toString()));
+        buffer.p(abi.encodePacked("' to='360 ", cx.toString(), " ", cy.toString(), "' dur='", cfg.rotDur.toString(), "s' repeatCount='indefinite'/>"));
+        
+        for(uint i = 0; i < 24; i++) { _renderSingleShard(buffer, seed, i, cx, cy); }
+        buffer.p(bytes("</g>"));
+        
+        buffer.p(abi.encodePacked("<circle cx='", cx.toString(), "' cy='", cy.toString(), "' r='45' fill='#ffffff' filter='url(#glowHeavy)'/>"));
     }
 
-    /**
-     * @dev Maps chess square indices to 1024x1024 coordinate space.
-     */
+    function _renderSignature(DynamicBufferLib.DynamicBuffer memory buffer, uint256 seed) private view {
+        uint256 uid = uint256(keccak256(abi.encodePacked(seed, block.timestamp, block.number))) % 1000000;
+
+        buffer.p(bytes("<text x='1000' y='1000' text-anchor='end' font-family='monospace' font-size='9' fill='#ffffff' opacity='0.3' letter-spacing='1'>"));
+        buffer.p(bytes("ARTISANS: J.YOON x G.LATHAM x R.POLCHIN"));
+        buffer.p(abi.encodePacked("  |  EPOCH: ", block.timestamp.toString(), "  |  BLK: ", block.number.toString()));
+        buffer.p(abi.encodePacked("  |  UID: ", uid.toString(), "</text>"));
+    }
+
     function _sqToCoord(uint16 sq) private pure returns (uint256 x, uint256 y) {
-        uint256 col = sq % 8;
-        uint256 row = 7 - (sq / 8); 
-        x = (col * 115) + 110; 
-        y = (row * 115) + 110;
+        uint256 col = sq % 8; uint256 row = 7 - (sq / 8); 
+        x = (col * 115) + 110; y = (row * 115) + 110;
     }
 
-    /**
-     * @dev Main entry point for the on-chain SVG generation.
-     */
-    function render(
-        uint16[] memory moves,
-        uint256 /* totalMoves */, 
-        uint256 captures,
-        uint256 checks
-    ) internal pure returns (string memory) {
+    function render(uint16[] memory moves, uint256 /* totalMoves */, uint256 captures, uint256 checks) internal view returns (string memory) {
         uint256 seed = uint256(keccak256(abi.encodePacked(moves, captures, checks)));
+        DynamicBufferLib.DynamicBuffer memory buffer;
+        RenderConfig memory cfg = _buildConfig(seed);
 
-        return string(
-            abi.encodePacked(
-                "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024' width='100%' height='100%'>",
-                _generateDefs(),
-                _generateMacroBackground(seed),
-                _generateGlobalArena(seed),
-                _generateGameFlow(moves, seed),
-                _generateCheckmateNova(moves[moves.length - 1], seed),
-                "</svg>"
-            )
-        );
+        buffer.p(bytes("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024' width='100%' height='100%'>"));
+        
+        _generateDefs(buffer, cfg); 
+        _renderOpeningBackground(buffer, moves, seed, cfg);
+        _renderGameFlow(buffer, moves, seed, cfg);
+        _renderPositionalAnchors(buffer, captures, checks, seed, cfg);
+        _renderCheckmateNarrative(buffer, moves[moves.length - 1], seed, cfg);
+        
+        _renderSignature(buffer, seed);
+
+        buffer.p(bytes("</svg>"));
+        return string(buffer.data);
     }
 }
