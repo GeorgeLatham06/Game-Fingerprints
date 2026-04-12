@@ -5,10 +5,16 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 import "solady/src/utils/DynamicBufferLib.sol";
 import "solady/src/utils/FixedPointMathLib.sol";
 
+/**
+ * @title SVGRenderer
+ * @dev Generates fully on-chain, dynamic SVG artifacts for the Game Fingerprints project.
+ * Utilizes Solady's DynamicBuffer and FixedPointMath to bypass EVM stack and gas limits.
+ */
 library SVGRenderer {
     using Strings for uint256;
     using DynamicBufferLib for DynamicBufferLib.DynamicBuffer;
 
+    // @dev Stack-safe variables for path rendering to prevent EVM limits.
     struct PathVars {
         uint256 x1; uint256 y1; uint256 x2; uint256 y2;
         uint256 cx1; uint256 cy1; uint256 cx2; uint256 cy2;
@@ -20,6 +26,7 @@ library SVGRenderer {
         uint256 safeY1; uint256 safeY2; uint256 safeX1;
     }
 
+    // @dev Centralized configuration for dynamic themes, animations, and typography.
     struct RenderConfig {
         string bgHex; string cF1; string cF2; string cC1; string cC2;
         uint256 rotDur; uint256 pulseDur; uint256 anchorScale;
@@ -27,23 +34,32 @@ library SVGRenderer {
         string narrativeText; 
     }
 
+    /**
+     * @dev Builds dynamic parameters based on the game seed and current block timestamp.
+     */
     function _buildConfig(uint256 seed) private view returns (RenderConfig memory cfg) {
         uint256 timeSeed = uint256(keccak256(abi.encodePacked(seed, block.timestamp)));
         
         cfg.theme = timeSeed % 4;
         
         if (cfg.theme == 0) { 
+            // Theme 0: Cyberpunk Neon
             cfg.bgHex = "#04060d"; cfg.cF1 = "#00f2fe"; cfg.cF2 = "#4facfe"; cfg.cC1 = "#ff0844"; cfg.cC2 = "#ffb199"; 
         } else if (cfg.theme == 1) { 
+            // Theme 1: Royal Renaissance
             cfg.bgHex = "#050510"; cfg.cF1 = "#cfb53b"; cfg.cF2 = "#ffdf73"; cfg.cC1 = "#e63946"; cfg.cC2 = "#a8dadc"; 
         } else if (cfg.theme == 2) { 
+            // Theme 2: Monochrome Grind
             cfg.bgHex = "#111111"; cfg.cF1 = "#ffffff"; cfg.cF2 = "#cccccc"; cfg.cC1 = "#888888"; cfg.cC2 = "#444444"; 
         } else { 
+            // Theme 3: Abyssal
             cfg.bgHex = "#001b2e"; cfg.cF1 = "#2980b9"; cfg.cF2 = "#6dd5fa"; cfg.cC1 = "#ff7e5f"; cfg.cC2 = "#feb47b"; 
         }
 
-        cfg.rotDur = 10 + (timeSeed % 30); cfg.pulseDur = 2 + (timeSeed % 5); 
-        cfg.anchorScale = 10 + (timeSeed % 25); cfg.forkIntens = 30 + (timeSeed % 60);  
+        cfg.rotDur = 10 + (timeSeed % 30); 
+        cfg.pulseDur = 2 + (timeSeed % 5); 
+        cfg.anchorScale = 10 + (timeSeed % 25); 
+        cfg.forkIntens = 30 + (timeSeed % 60);  
         cfg.glyphType = (timeSeed >> 8) % 3;
         
         uint256 textType = (timeSeed >> 16) % 3;
@@ -76,6 +92,9 @@ library SVGRenderer {
         buffer.p(bytes("</defs>"));
     }
 
+    /**
+     * @dev Renders the ambient background, including dynamic bokeh effects and tile corruption.
+     */
     function _renderOpeningBackground(DynamicBufferLib.DynamicBuffer memory buffer, uint16[] memory moves, uint256 seed, RenderConfig memory cfg) private pure {
         uint256 openingHash = moves.length > 3 ? uint256(keccak256(abi.encodePacked(moves[0], moves[1], moves[2]))) : seed;
         buffer.p(abi.encodePacked("<rect width='1024' height='1024' fill='", cfg.bgHex, "'/>"));
@@ -92,6 +111,9 @@ library SVGRenderer {
         else { buffer.p(bytes("<rect width='1024' height='1024' filter='url(#noiseSharp)' opacity='0.08' style='mix-blend-mode: overlay;'/>")); }
     }
 
+    /**
+     * @dev Renders an individual game move as a curved path with trailing sketch effects.
+     */
     function _renderSinglePath(DynamicBufferLib.DynamicBuffer memory buffer, uint16 move, uint256 i, uint256 total, uint256 seed, uint256[4] memory hotspots, RenderConfig memory cfg) private pure {
         PathVars memory v; 
         uint256 moveHash = uint256(keccak256(abi.encodePacked(seed, i)));
@@ -126,6 +148,9 @@ library SVGRenderer {
         buffer.p(abi.encodePacked("<circle cx='", v.cx2.toString(), "' cy='", v.cy2.toString(), "' r='1.5' fill='#ffffff' opacity='0.5'/>"));
     }
 
+    /**
+     * @dev Iterates through all moves to build the complete flow field and pulsing hotspots.
+     */
     function _renderGameFlow(DynamicBufferLib.DynamicBuffer memory buffer, uint16[] memory moves, uint256 seed, RenderConfig memory cfg) private pure {
         uint256 total = moves.length;
         uint256[4] memory hotspots = [(seed % 600) + 200, ((seed >> 8) % 600) + 200, ((seed >> 16) % 600) + 200, ((seed >> 24) % 600) + 200];
@@ -139,12 +164,15 @@ library SVGRenderer {
         for (uint256 i = 0; i < total - 1; i++) { _renderSinglePath(buffer, moves[i], i, total, seed, hotspots, cfg); }
     }
 
+    /**
+     * @dev Creates tactical anchors (representing pins/forks) and stamps glyphs onto the board.
+     */
     function _renderSingleAnchor(DynamicBufferLib.DynamicBuffer memory buffer, uint256 seed, uint256 i, RenderConfig memory cfg) private pure {
         uint256 ax = (seed >> (i * 2)) % 900 + 50;
         uint256 ay = (seed >> (i * 2 + 1)) % 900 + 50;
         uint256 size = cfg.anchorScale + (seed % 10); 
 
-        // [버그 픽스] 언더플로우를 방지하는 안전한 뺄셈 (Safe Subtraction)
+        // Safe subtraction to prevent underflow errors at canvas edges.
         uint256 safeAx = ax > size ? ax - size : 0;
         uint256 f1 = cfg.forkIntens; uint256 f2 = cfg.forkIntens * 2;
         uint256 safeAy = ay > f1 ? ay - f1 : 0;
@@ -178,6 +206,9 @@ library SVGRenderer {
         buffer.p(abi.encodePacked(v.angle.toString(), " ", cx.toString(), " ", cy.toString(), ")'/>"));
     }
 
+    /**
+     * @dev Renders the final endgame blast, rotating shards, and narrative text.
+     */
     function _renderCheckmateNarrative(DynamicBufferLib.DynamicBuffer memory buffer, uint16 lastMove, uint256 seed, RenderConfig memory cfg) private pure {
         (uint256 cx, uint256 cy) = _sqToCoord(lastMove & 0x3F);
 
@@ -197,6 +228,9 @@ library SVGRenderer {
         buffer.p(abi.encodePacked("<circle cx='", cx.toString(), "' cy='", cy.toString(), "' r='45' fill='#ffffff' filter='url(#glowHeavy)'/>"));
     }
 
+    /**
+     * @dev Embeds a permanent, 1-of-1 digital signature using the block timestamp and an internal UID.
+     */
     function _renderSignature(DynamicBufferLib.DynamicBuffer memory buffer, uint256 seed) private view {
         uint256 uid = uint256(keccak256(abi.encodePacked(seed, block.timestamp, block.number))) % 1000000;
 
@@ -211,6 +245,9 @@ library SVGRenderer {
         x = (col * 115) + 110; y = (row * 115) + 110;
     }
 
+    /**
+     * @dev Main entry point. Assembles all layers into a single DynamicBuffer to minimize gas usage.
+     */
     function render(uint16[] memory moves, uint256 /* totalMoves */, uint256 captures, uint256 checks) internal view returns (string memory) {
         uint256 seed = uint256(keccak256(abi.encodePacked(moves, captures, checks)));
         DynamicBufferLib.DynamicBuffer memory buffer;
