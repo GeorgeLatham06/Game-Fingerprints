@@ -2,15 +2,15 @@
 
 Turning chess games into fully on-chain generative NFTs on Ethereum Sepolia.
 
-The idea: you feed in a PGN file (a recorded chess game), and it gets minted as an NFT where the art is generated entirely by the smart contract. No IPFS, no external hosting — the contract builds the SVG itself every time someone views the NFT.
+The idea: you feed in a PGN file (a recorded chess game), and it gets minted as an NFT where the art is generated entirely by the smart contract. No IPFS, no external hosting the contract builds the SVG itself every time someone views the NFT.
 
 ## How it works
 
 There are two sides to this:
 
-**Off-chain (JavaScript)** — A parser reads the PGN file, validates the moves using chess.js, and compresses each move into 2 bytes using bit packing. This keeps the on-chain storage cost low. It also calculates game stats like capture count, check count, and average move distance.
+**Off-chain (JavaScript)** - A parser reads the PGN file, validates the moves using chess.js, and compresses each move into 2 bytes using bit packing. This keeps the on-chain storage cost low. It also calculates game stats like capture count, check count, and average move distance.
 
-**On-chain (Solidity)** — The smart contract stores the compressed move bytes when you mint. When anyone calls `tokenURI()`, the contract decodes the moves and generates an SVG image on the fly, returning it as a base64 data URI embedded in the JSON metadata. Fully self-contained.
+**On-chain (Solidity)** - The smart contract stores the compressed move bytes when you mint. When anyone calls `tokenURI()`, the contract decodes the moves and generates an SVG image on the fly, returning it as a base64 data URI embedded in the JSON metadata. Fully self-contained.
 
 ## Project structure
 
@@ -37,7 +37,7 @@ cd Game-Fingerprints
 npm install
 ```
 
-Copy `.env.example` to `.env` and fill in your values when ready to deploy:
+Copy `.env.example` to `.env` and fill in your values when ready to deploy (can wait till we write the art engine):
 ```
 SEPOLIA_RPC_URL=your_alchemy_or_infura_url
 PRIVATE_KEY=your_wallet_private_key
@@ -70,7 +70,7 @@ node scripts/parsePGN.js games/sample.pgn
 
 ## What's left
 
-- [ ] Build the art engine in SVGRenderer.sol — needs to generate unique SVGs from the move data and stats
+- [ ] Build the art engine in SVGRenderer.sol - needs to generate unique SVGs from the move data and stats
 - [ ] Wire up tokenURI to use SVGRenderer.render() instead of the placeholder
 - [ ] Write a deploy script for Sepolia
 - [ ] Set up Alchemy/Infura for RPC access and get test ETH from a faucet
