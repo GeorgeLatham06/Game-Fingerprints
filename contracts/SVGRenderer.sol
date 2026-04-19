@@ -118,8 +118,13 @@ library SVGRenderer {
         PathVars memory v; 
         uint256 moveHash = uint256(keccak256(abi.encodePacked(seed, i)));
         
+        /*
         (v.x1, v.y1) = _sqToCoord((move >> 6) & 0x3F);
         (v.x2, v.y2) = _sqToCoord(move & 0x3F);
+        */
+
+        (v.x1, v.y1) = _sqToCoord((move >> 10) & 0x3F);
+        (v.x2, v.y2) = _sqToCoord((move >> 4) & 0x3F);
 
         {
             uint256 dx = v.x1 > v.x2 ? v.x1 - v.x2 : v.x2 - v.x1;
@@ -242,14 +247,14 @@ library SVGRenderer {
 
     function _sqToCoord(uint16 sq) private pure returns (uint256 x, uint256 y) {
         uint256 col = sq % 8; uint256 row = 7 - (sq / 8); 
-        x = (col * 115) + 110; y = (row * 115) + 110;
+        x = (col * 128) + 48; y = (row * 128) + 48;
     }
 
     /**
      * @dev Main entry point. Assembles all layers into a single DynamicBuffer to minimize gas usage.
      */
-    function render(uint16[] memory moves, uint256 /* totalMoves */, uint256 captures, uint256 checks) internal view returns (string memory) {
-        uint256 seed = uint256(keccak256(abi.encodePacked(moves, captures, checks)));
+    function render(uint16[] memory moves, uint256 /* totalMoves */, uint256 captures, uint256 checks, uint256 mintTimestamp) internal view returns (string memory) {
+        uint256 seed = uint256(keccak256(abi.encodePacked(moves, captures, checks, mintTimestamp)));
         DynamicBufferLib.DynamicBuffer memory buffer;
         RenderConfig memory cfg = _buildConfig(seed);
 

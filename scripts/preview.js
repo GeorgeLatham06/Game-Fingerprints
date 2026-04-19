@@ -26,11 +26,17 @@ async function main() {
      * using the Kasparov vs. Deep Blue, Game 6 (1997) dataset.
      */
     const dummyMoveData = "0x31c0caa02db0ce3005208dc849c8e7307260fad01530d2c01950def09ac8ef401060d6c84ee4f3b009d0c6102180eb101440b6307560efa06218aa180d30c6a0ba50b2581348f74829a0"; 
-    const dummyMetadata = "Kasparov vs Deep Blue, Game 6 (1997)";
+    const dummyMetadata = JSON.stringify([
+        { trait_type: "White", value: "Kasparov" },
+        { trait_type: "Black", value: "Deep Blue" },
+        { trait_type: "Result", value: "0-1" },
+        { trait_type: "Date", value: "1997.05.11" },
+        { trait_type: "Event", value: "IBM Kasparov vs. Deep Blue Rematch" }
+    ]);
 
     // 3. Mint a test NFT with the provided move data
     console.log("🔨 Minting test NFT...");
-    const tx = await contract.mint(dummyMoveData, dummyMetadata);
+    const tx = await contract.mint(dummyMoveData, dummyMetadata, 9, 1);
     await tx.wait();
 
     // 4. Retrieve the tokenURI (Base64 encoded JSON)

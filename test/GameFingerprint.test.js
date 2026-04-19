@@ -15,7 +15,7 @@ describe("GameFingerprint", function () {
     const moveData = "0x3090c850"; // just some dummy bytes
     const metadata = '{"white":"Test","black":"Test","result":"1-0"}';
 
-    await contract.mint(moveData, metadata);
+    await contract.mint(moveData, metadata, 0, 0);
 
     expect(await contract.ownerOf(0)).to.equal(owner.address);
     expect(await contract.getMoveData(0)).to.equal(moveData);
@@ -23,7 +23,7 @@ describe("GameFingerprint", function () {
   });
 
   it("tokenURI returns data uri", async function () {
-    await contract.mint("0x3090c850", '{"white":"Test","black":"Test","result":"1-0"}');
+    await contract.mint("0x3090c850", '{"white":"Test","black":"Test","result":"1-0"}', 0, 0);
 
     const uri = await contract.tokenURI(0);
     expect(uri).to.include("data:application/json;base64,");

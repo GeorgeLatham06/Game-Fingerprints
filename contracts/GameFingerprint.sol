@@ -21,6 +21,9 @@ contract GameFingerprint is ERC721, Ownable {
     struct GameData {
         bytes moveData;
         string metadata;
+        uint256 captures;
+        uint256 checks;
+        uint256 mintTimestamp; //added so that the image is generated based on the time it was minted instead of when it's viewed
     }
 
     // Mapping from tokenId to game data storage
@@ -33,10 +36,10 @@ contract GameFingerprint is ERC721, Ownable {
      * @param moveData Encoded move data from the PGN parser.
      * @param metadata String containing game details (e.g., players, results).
      */
-    function mint(bytes calldata moveData, string calldata metadata) external onlyOwner returns (uint256) {
+    function mint(bytes calldata moveData, string calldata metadata, uint256 captures, uint256 checks) external onlyOwner returns (uint256) {
         uint256 tokenId = _nextTokenId++;
         _safeMint(msg.sender, tokenId);
-        _games[tokenId] = GameData({moveData: moveData, metadata: metadata});
+        _games[tokenId] = GameData({moveData: moveData, metadata: metadata, captures: captures, checks: checks, mintTimestamp: block.timestamp});
         return tokenId;
     }
 
@@ -56,9 +59,16 @@ contract GameFingerprint is ERC721, Ownable {
         // Currently utilizing hardcoded values based on the Kasparov vs. Deep Blue (Game 6) test.
         string memory svg = SVGRenderer.render(
             moves, 
-            moves.length, 
+            moves.length,
+            game.captures,
+            game.checks,
+            game.mintTimestamp
+
+
+            /* 
             9, // TEMPORARY: Hardcoded capture count
             1  // TEMPORARY: Hardcoded check count
+            */
         );
 
         // Building the JSON metadata
@@ -66,7 +76,9 @@ contract GameFingerprint is ERC721, Ownable {
             abi.encodePacked(
                 '{"name":"Game Fingerprint #',
                 tokenId.toString(),
-                '","description":"On-chain chess game fingerprint","image":"data:image/svg+xml;base64,',
+                '","description":"On-chain chess game fingerprint","attributes":',
+                game.metadata,
+                ',"image":"data:image/svg+xml;base64,',
                 Base64.encode(bytes(svg)),
                 '"}'
             )
