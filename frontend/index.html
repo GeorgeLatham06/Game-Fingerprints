@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Fingerprints</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #0a0a0f;
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            color: #ffffff;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 14px;
+        }
+
+        .wallet-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #111118;
+            border: 1px solid #222;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+        }
+
+        .wallet-status { font-size: 13px; color: #888; }
+        .wallet-status.connected { color: #4ade80; }
+        .wallet-address { font-size: 12px; color: #666; }
+
+        .network-badge {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: #1a1a2e;
+            color: #888;
+        }
+
+        .network-badge.sepolia { background: #1e293b; color: #60a5fa; }
+        .network-badge.wrong { background: #2e1a1a; color: #f87171; }
+
+        button {
+            background: #1a1a2e;
+            color: #e0e0e0;
+            border: 1px solid #333;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            transition: all 0.15s;
+        }
+
+        button:hover { background: #252540; border-color: #555; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        button.primary {
+            background: #2563eb;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+
+        button.primary:hover { background: #1d4ed8; }
+
+        .section {
+            background: #111118;
+            border: 1px solid #222;
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .section h2 { font-size: 16px; margin-bottom: 16px; color: #ccc; }
+
+        .upload-zone {
+            border: 2px dashed #333;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+
+        .upload-zone:hover { border-color: #555; }
+        .upload-zone.dragover { border-color: #3b82f6; background: #0f172a; }
+        .upload-zone p { color: #666; font-size: 14px; }
+        .upload-zone .filename { color: #4ade80; font-size: 13px; margin-top: 8px; }
+
+        input[type="file"] { display: none; }
+
+        .game-info {
+            background: #0a0a0f;
+            border: 1px solid #222;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 16px;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+
+        .game-info .label { color: #666; }
+        .game-info .value { color: #e0e0e0; }
+        .stat-row { display: flex; gap: 20px; flex-wrap: wrap; }
+
+        .log {
+            background: #0a0a0f;
+            border: 1px solid #222;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 16px;
+            font-size: 12px;
+            color: #888;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .log .entry { margin-bottom: 4px; }
+        .log .error { color: #f87171; }
+        .log .success { color: #4ade80; }
+
+        .mint-btn-wrapper { margin-top: 20px; text-align: center; }
+        .tx-link { color: #60a5fa; text-decoration: none; font-size: 12px; }
+        .tx-link:hover { text-decoration: underline; }
+        .hidden { display: none; }
+
+        .sepolia-note {
+            text-align: center;
+            font-size: 11px;
+            color: #555;
+            margin-top: 8px;
+        }
+
+        .sepolia-note a { color: #60a5fa; text-decoration: none; }
+        .sepolia-note a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Game Fingerprints</h1>
+        <p class="subtitle">upload a chess game. mint it on-chain.</p>
+
+        <div class="wallet-bar">
+            <div>
+                <div class="wallet-status" id="walletStatus">not connected</div>
+                <div class="wallet-address" id="walletAddress"></div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <span class="network-badge" id="networkBadge">no network</span>
+                <button id="connectBtn" onclick="connectWallet()">connect wallet</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>upload pgn</h2>
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                <p>drop a .pgn file here or click to browse</p>
+                <div class="filename hidden" id="fileName"></div>
+            </div>
+            <input type="file" id="fileInput" accept=".pgn" onchange="handleFile(this.files[0])">
+
+            <div class="game-info hidden" id="gameInfo">
+                <div><span class="label">white: </span><span class="value" id="infoWhite"></span></div>
+                <div><span class="label">black: </span><span class="value" id="infoBlack"></span></div>
+                <div><span class="label">result: </span><span class="value" id="infoResult"></span></div>
+                <div><span class="label">date: </span><span class="value" id="infoDate"></span></div>
+                <div style="margin-top: 8px;" class="stat-row">
+                    <span><span class="label">moves: </span><span class="value" id="infoMoves"></span></span>
+                    <span><span class="label">captures: </span><span class="value" id="infoCaptures"></span></span>
+                    <span><span class="label">checks: </span><span class="value" id="infoChecks"></span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="mint-btn-wrapper">
+            <button class="primary" id="mintBtn" onclick="mintNFT()" disabled>mint game fingerprint</button>
+            <p class="sepolia-note">mints on sepolia testnet - need test ETH? <a href="https://sepoliafaucet.com" target="_blank">get some here</a></p>
+        </div>
+
+        <div class="log hidden" id="log"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.12.1/chess.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
+
+    <script>
+        // deployed contract address on sepolia
+        const CONTRACT_ADDRESS = "0xB0546C402ffC32485d1749bFa3D8395Cea3Db894";
+
+        const CONTRACT_ABI = [
+            "function mint(bytes moveData, string metadata, uint256 captures, uint256 checks) external returns (uint256)",
+            "function tokenURI(uint256 tokenId) external view returns (string)"
+        ];
+
+        const SEPOLIA_CHAIN_ID = "0xaa36a7";
+
+        let provider = null;
+        let signer = null;
+        let parsedGame = null;
+
+        // --- pgn parsing ---
+
+        function squareToIndex(sq) {
+            const file = sq.charCodeAt(0) - 97;
+            const rank = parseInt(sq[1]) - 1;
+            return rank * 8 + file;
+        }
+
+        function encodeMoves(moves) {
+            const bytes = [];
+            for (let i = 0; i < moves.length; i++) {
+                const m = moves[i];
+                const from = squareToIndex(m.from);
+                const to = squareToIndex(m.to);
+                const capture = (m.flags.indexOf('c') !== -1 || m.flags.indexOf('e') !== -1) ? 1 : 0;
+                const check = (m.san.indexOf('+') !== -1 || m.san.indexOf('#') !== -1) ? 1 : 0;
+
+                const byte1 = (from << 2) | (to >> 4);
+                const byte2 = ((to & 0x0f) << 4) | (capture << 3) | (check << 2);
+                bytes.push(byte1, byte2);
+            }
+            return '0x' + bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function parsePGN(pgnText) {
+            const chess = new Chess();
+            const loaded = chess.load_pgn(pgnText);
+            if (!loaded) throw new Error("couldn't parse this pgn file");
+
+            const moves = chess.history({ verbose: true });
+            if (moves.length === 0) throw new Error("no moves found in pgn");
+
+            const header = chess.header();
+
+            let captures = 0;
+            let checks = 0;
+            for (const m of moves) {
+                if (m.flags.indexOf('c') !== -1 || m.flags.indexOf('e') !== -1) captures++;
+                if (m.san.indexOf('+') !== -1 || m.san.indexOf('#') !== -1) checks++;
+            }
+
+            const encodedBytes = encodeMoves(moves);
+
+            const attributes = JSON.stringify([
+                { trait_type: "White", value: header.White || "Unknown" },
+                { trait_type: "Black", value: header.Black || "Unknown" },
+                { trait_type: "Result", value: header.Result || "*" },
+                { trait_type: "Date", value: header.Date || "Unknown" },
+                { trait_type: "Event", value: header.Event || "Unknown" },
+                { trait_type: "Captures", value: captures },
+                { trait_type: "Checks", value: checks },
+                { trait_type: "Move Count", value: moves.length }
+            ]);
+
+            return {
+                metadata: {
+                    white: header.White || "Unknown",
+                    black: header.Black || "Unknown",
+                    result: header.Result || "*",
+                    date: header.Date || "Unknown",
+                },
+                moveCount: moves.length,
+                captures: captures,
+                checks: checks,
+                encodedBytes: encodedBytes,
+                attributes: attributes,
+            };
+        }
+
+        // --- ui helpers ---
+
+        function log(msg, type) {
+            const el = document.getElementById('log');
+            el.classList.remove('hidden');
+            const entry = document.createElement('div');
+            entry.className = 'entry' + (type ? ' ' + type : '');
+            entry.textContent = '> ' + msg;
+            el.appendChild(entry);
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function updateMintButton() {
+            const btn = document.getElementById('mintBtn');
+            btn.disabled = !(signer && parsedGame && CONTRACT_ADDRESS !== "0x0000000000000000000000000000000000000000");
+        }
+
+        // --- drag and drop ---
+
+        const zone = document.getElementById('uploadZone');
+        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+        });
+
+        // --- file handling ---
+
+        function handleFile(file) {
+            if (!file) return;
+            if (!file.name.endsWith('.pgn')) {
+                log('please upload a .pgn file', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    parsedGame = parsePGN(e.target.result);
+
+                    const nameEl = document.getElementById('fileName');
+                    nameEl.textContent = file.name;
+                    nameEl.classList.remove('hidden');
+                    document.getElementById('uploadZone').querySelector('p').textContent = 'file loaded:';
+
+                    document.getElementById('infoWhite').textContent = parsedGame.metadata.white;
+                    document.getElementById('infoBlack').textContent = parsedGame.metadata.black;
+                    document.getElementById('infoResult').textContent = parsedGame.metadata.result;
+                    document.getElementById('infoDate').textContent = parsedGame.metadata.date;
+                    document.getElementById('infoMoves').textContent = parsedGame.moveCount;
+                    document.getElementById('infoCaptures').textContent = parsedGame.captures;
+                    document.getElementById('infoChecks').textContent = parsedGame.checks;
+                    document.getElementById('gameInfo').classList.remove('hidden');
+
+                    log('parsed ' + file.name + ': ' + parsedGame.moveCount + ' moves, ' + parsedGame.captures + ' captures, ' + parsedGame.checks + ' checks');
+                    updateMintButton();
+                } catch (err) {
+                    log('parse error: ' + err.message, 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // --- wallet ---
+
+        async function connectWallet() {
+            if (!window.ethereum) {
+                log('no wallet found - install metamask', 'error');
+                return;
+            }
+
+            try {
+                provider = new ethers.BrowserProvider(window.ethereum);
+                await provider.send("eth_requestAccounts", []);
+
+                signer = await provider.getSigner();
+                const address = await signer.getAddress();
+                const network = await provider.getNetwork();
+
+                document.getElementById('walletStatus').textContent = 'connected';
+                document.getElementById('walletStatus').classList.add('connected');
+                document.getElementById('walletAddress').textContent = address.slice(0, 6) + '...' + address.slice(-4);
+                document.getElementById('connectBtn').textContent = 'connected';
+                document.getElementById('connectBtn').disabled = true;
+
+                updateNetworkBadge(network.chainId);
+                log('connected: ' + address);
+
+                if (network.chainId !== 11155111n) {
+                    log('wrong network - switching to sepolia...', 'error');
+                    await switchToSepolia();
+                }
+
+                updateMintButton();
+            } catch (err) {
+                log('wallet error: ' + err.message, 'error');
+            }
+        }
+
+        function updateNetworkBadge(chainId) {
+            const badge = document.getElementById('networkBadge');
+            if (chainId === 11155111n || chainId === 11155111) {
+                badge.textContent = 'sepolia';
+                badge.className = 'network-badge sepolia';
+            } else {
+                badge.textContent = 'wrong network';
+                badge.className = 'network-badge wrong';
+            }
+        }
+
+        async function switchToSepolia() {
+            try {
+                await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: SEPOLIA_CHAIN_ID }],
+                });
+                provider = new ethers.BrowserProvider(window.ethereum);
+                signer = await provider.getSigner();
+                updateNetworkBadge(11155111n);
+                log('switched to sepolia');
+            } catch (err) {
+                if (err.code === 4902) {
+                    try {
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: SEPOLIA_CHAIN_ID,
+                                chainName: 'Sepolia Testnet',
+                                nativeCurrency: { name: 'SepoliaETH', symbol: 'ETH', decimals: 18 },
+                                rpcUrls: ['https://rpc.sepolia.org'],
+                                blockExplorerUrls: ['https://sepolia.etherscan.io']
+                            }],
+                        });
+                        provider = new ethers.BrowserProvider(window.ethereum);
+                        signer = await provider.getSigner();
+                        updateNetworkBadge(11155111n);
+                        log('added and switched to sepolia');
+                    } catch (addErr) {
+                        log('couldnt add sepolia: ' + addErr.message, 'error');
+                    }
+                } else {
+                    log('couldnt switch network: ' + err.message, 'error');
+                }
+            }
+        }
+
+        if (window.ethereum) {
+            window.ethereum.on('chainChanged', () => window.location.reload());
+            window.ethereum.on('accountsChanged', () => window.location.reload());
+        }
+
+        // --- minting ---
+
+        async function mintNFT() {
+            if (!signer || !parsedGame) return;
+
+            if (CONTRACT_ADDRESS === "0x0000000000000000000000000000000000000000") {
+                log('contract not deployed yet', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('mintBtn');
+            btn.disabled = true;
+            btn.textContent = 'minting...';
+
+            try {
+                const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+                log('sending mint transaction...');
+                const tx = await contract.mint(
+                    parsedGame.encodedBytes,
+                    parsedGame.attributes,
+                    parsedGame.captures,
+                    parsedGame.checks
+                );
+
+                log('tx sent: ' + tx.hash);
+                log('waiting for confirmation...');
+
+                const receipt = await tx.wait();
+                log('minted! block: ' + receipt.blockNumber, 'success');
+
+                const logEl = document.getElementById('log');
+                const linkEntry = document.createElement('div');
+                linkEntry.className = 'entry success';
+                linkEntry.innerHTML = '> <a class="tx-link" href="https://sepolia.etherscan.io/tx/' + tx.hash + '" target="_blank">view on etherscan</a>';
+                logEl.appendChild(linkEntry);
+
+            } catch (err) {
+                let msg = err.message;
+                if (msg.includes('user rejected')) msg = 'transaction rejected by user';
+                else if (msg.includes('insufficient funds')) msg = 'not enough sepolia ETH - get some from a faucet';
+                log('mint failed: ' + msg, 'error');
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'mint game fingerprint';
+            updateMintButton();
+        }
+    </script>
+</body>
+</html>

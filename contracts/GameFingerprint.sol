@@ -36,7 +36,7 @@ contract GameFingerprint is ERC721, Ownable {
      * @param moveData Encoded move data from the PGN parser.
      * @param metadata String containing game details (e.g., players, results).
      */
-    function mint(bytes calldata moveData, string calldata metadata, uint256 captures, uint256 checks) external onlyOwner returns (uint256) {
+    function mint(bytes calldata moveData, string calldata metadata, uint256 captures, uint256 checks) external returns (uint256) {
         uint256 tokenId = _nextTokenId++;
         _safeMint(msg.sender, tokenId);
         _games[tokenId] = GameData({moveData: moveData, metadata: metadata, captures: captures, checks: checks, mintTimestamp: block.timestamp});

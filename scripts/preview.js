@@ -20,23 +20,41 @@ async function main() {
     }
     console.log("✅ Temporary contract deployed!");
 
-    /**
-     * 2. Prepare mock chess move data
-     * This 0x... hex string represents encoded move data (2-byte encoding)
-     * using the Kasparov vs. Deep Blue, Game 6 (1997) dataset.
-     */
-    const dummyMoveData = "0x31c0caa02db0ce3005208dc849c8e7307260fad01530d2c01950def09ac8ef401060d6c84ee4f3b009d0c6102180eb101440b6307560efa06218aa180d30c6a0ba50b2581348f74829a0"; 
-    const dummyMetadata = JSON.stringify([
-        { trait_type: "White", value: "Kasparov" },
-        { trait_type: "Black", value: "Deep Blue" },
-        { trait_type: "Result", value: "0-1" },
-        { trait_type: "Date", value: "1997.05.11" },
-        { trait_type: "Event", value: "IBM Kasparov vs. Deep Blue Rematch" }
-    ]);
+    // 2. Load game data - use parsed_output.json if it exists, otherwise use default
+    const path = require("path");
+    const parsedPath = process.argv[2] || path.join(__dirname, "../games/parsed_output.json");
+    let moveData, metadata, captures, checks;
+
+    if (fs.existsSync(parsedPath)) {
+        console.log("📂 Loading from:", parsedPath);
+        const parsed = JSON.parse(fs.readFileSync(parsedPath, "utf-8"));
+        moveData = parsed.encodedBytes;
+        metadata = JSON.stringify([
+            { trait_type: "White", value: parsed.metadata.white },
+            { trait_type: "Black", value: parsed.metadata.black },
+            { trait_type: "Result", value: parsed.metadata.result },
+            { trait_type: "Date", value: parsed.metadata.date },
+            { trait_type: "Event", value: parsed.metadata.event || "Unknown" }
+        ]);
+        captures = parsed.stats.captureCount;
+        checks = parsed.stats.checkCount;
+    } else {
+        console.log("📂 Using default Deep Blue game");
+        moveData = "0x31c0caa02db0ce3005208dc849c8e7307260fad01530d2c01950def09ac8ef401060d6c84ee4f3b009d0c6102180eb101440b6307560efa06218aa180d30c6a0ba50b2581348f74829a0";
+        metadata = JSON.stringify([
+            { trait_type: "White", value: "Kasparov" },
+            { trait_type: "Black", value: "Deep Blue" },
+            { trait_type: "Result", value: "0-1" },
+            { trait_type: "Date", value: "1997.05.11" },
+            { trait_type: "Event", value: "IBM Kasparov vs. Deep Blue Rematch" }
+        ]);
+        captures = 9;
+        checks = 1;
+    }
 
     // 3. Mint a test NFT with the provided move data
     console.log("🔨 Minting test NFT...");
-    const tx = await contract.mint(dummyMoveData, dummyMetadata, 9, 1);
+    const tx = await contract.mint(moveData, metadata, captures, checks);
     await tx.wait();
 
     // 4. Retrieve the tokenURI (Base64 encoded JSON)

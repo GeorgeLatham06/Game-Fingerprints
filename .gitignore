@@ -5,4 +5,5 @@ typechain-types
 .env
 games/parsed_output.json
 games/preview.svg
+*.svg
 .DS_Store
