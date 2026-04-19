@@ -1,49 +1,66 @@
 # Game Fingerprints
 
-Turning chess games into fully on-chain generative NFTs on Ethereum Sepolia.
+Chess games turned into fully on-chain generative NFTs on Ethereum Sepolia.
 
-The idea: you feed in a PGN file (a recorded chess game), and it gets minted as an NFT where the art is generated entirely by the smart contract. No IPFS, no external hosting the contract builds the SVG itself every time someone views the NFT.
+You upload a PGN file, and it gets minted as an NFT where the art is generated entirely by the smart contract. No IPFS, no external hosting - the contract builds the SVG itself every time someone views the NFT.
+
+**Live contract on Sepolia:** `0xB0546C402ffC32485d1749bFa3D8395Cea3Db894`
+
+## How to mint
+
+Contract is already deployed, so just run the website locally and mint.
+
+1. Clone the repo:
+   ```bash
+   git clone https://github.com/GeorgeLatham06/Game-Fingerprints.git
+   cd Game-Fingerprints
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Start the website:
+   ```bash
+   cd frontend
+   python3 -m http.server 8080
+   ```
+
+4. Open `http://localhost:8080` in your browser.
+
+5. Connect your MetaMask, grab some Sepolia test ETH from the faucet link on the site, drag in a `.pgn` file, and hit mint.
+
+That's it - you'll see a link to Etherscan once the transaction goes through.
 
 ## How it works
 
-There are two sides to this:
+**Off-chain (JavaScript)** - A parser reads the PGN file, validates the moves using chess.js, and compresses each move into 2 bytes using bit packing. It also calculates game stats like capture count, check count, and average move distance.
 
-**Off-chain (JavaScript)** - A parser reads the PGN file, validates the moves using chess.js, and compresses each move into 2 bytes using bit packing. This keeps the on-chain storage cost low. It also calculates game stats like capture count, check count, and average move distance.
-
-**On-chain (Solidity)** - The smart contract stores the compressed move bytes when you mint. When anyone calls `tokenURI()`, the contract decodes the moves and generates an SVG image on the fly, returning it as a base64 data URI embedded in the JSON metadata. Fully self-contained.
+**On-chain (Solidity)** - The smart contract stores the compressed move bytes when you mint. When anyone calls `tokenURI()`, the contract decodes the moves and generates an SVG image on the fly, returning it as a base64 data URI embedded in the JSON metadata. The art uses the block timestamp at mint as part of the seed, so every NFT looks unique.
 
 ## Project structure
 
 ```
 contracts/
   GameFingerprint.sol  - main ERC-721 NFT contract
-  MoveEncoder.sol      - library for encoding/decoding move bytes
-  SVGRenderer.sol      - library that generates the SVG (placeholder rn)
+  MoveEncoder.sol      - library for decoding move bytes on-chain
+  SVGRenderer.sol      - library that generates the SVG art
 scripts/
   parsePGN.js          - reads a .pgn file and outputs encoded move data
   mint.js              - mints an NFT using parsed game data
-  preview.js           - fetches tokenURI and saves the SVG locally
+  preview.js           - deploys locally and generates an SVG preview
+  deploy.js            - deploys the contract to sepolia
+frontend/
+  index.html           - the minting website (single file, no build needed)
 test/
   GameFingerprint.test.js
 games/
-  sample.pgn           - test game (scholar's mate)
+  sample.pgn           - scholar's mate test game
+  deepblue.pgn         - kasparov vs deep blue (1997)
 ```
 
-## Setup
-
-```bash
-git clone https://github.com/GeorgeLatham06/Game-Fingerprints.git
-cd Game-Fingerprints
-npm install
-```
-
-Copy `.env.example` to `.env` and fill in your values when ready to deploy (can wait till we write the art engine):
-```
-SEPOLIA_RPC_URL=your_alchemy_or_infura_url
-PRIVATE_KEY=your_wallet_private_key
-```
-
-## Running it
+## Developing locally
 
 Compile the contracts:
 ```bash
@@ -55,30 +72,18 @@ Run tests:
 npx hardhat test
 ```
 
-Parse a chess game:
+Preview the art locally without deploying:
 ```bash
 node scripts/parsePGN.js games/sample.pgn
+npx hardhat run scripts/preview.js
+open output.svg
 ```
-
-## What's done
-
-- Project scaffold with Hardhat, OpenZeppelin, chess.js
-- PGN parser that compresses moves into 2-byte encoding with game stats
-- ERC-721 contract that stores move data and returns on-chain metadata
-- Basic tests passing
-- tokenURI returns base64 encoded JSON with embedded SVG
-
-## What's left
-
-- [ ] Build the art engine in SVGRenderer.sol - needs to generate unique SVGs from the move data and stats
-- [ ] Wire up tokenURI to use SVGRenderer.render() instead of the placeholder
-- [ ] Write a deploy script for Sepolia
-- [ ] Set up Alchemy/Infura for RPC access and get test ETH from a faucet
-- [ ] Deploy, mint, and verify on OpenSea testnet
 
 ## Tech stack
 
 - Solidity 0.8.28 / Hardhat
-- OpenZeppelin contracts (ERC-721, Ownable, Base64)
+- OpenZeppelin (ERC-721, Ownable, Base64)
+- Solady (DynamicBufferLib, FixedPointMathLib) for gas-efficient SVG building
 - chess.js for PGN parsing
+- ethers.js v6 for the frontend
 - Sepolia testnet
